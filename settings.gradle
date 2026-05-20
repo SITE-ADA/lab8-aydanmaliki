@@ -1,0 +1,4 @@
+rootProject.name = 'university-system'
+
+include 'student-service'
+include 'course-service'

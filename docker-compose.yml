@@ -1,0 +1,72 @@
+services:
+  student-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: studentDB
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - student_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d studentDB" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  student-service:
+    image: student-service
+    build:
+      context: ./
+      dockerfile: student-service/Dockerfile
+    depends_on:
+      - student-db
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://student-db:5432/studentDB
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: password
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "true"
+      SERVER_PORT: 9090
+    ports:
+      - "9090:9090"
+
+  course-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: courseDB
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - course_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d courseDB" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  course-service:
+    image: course-service
+    build:
+      context: ./
+      dockerfile: course-service/Dockerfile
+    depends_on:
+      - course-db
+      - student-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://course-db:5432/courseDB
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: password
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "true"
+      STUDENT_SERVICE_BASE_URL: http://student-service:9090
+      SERVER_PORT: 8081
+    ports:
+      - "8081:8081"
+
+volumes:
+  student_postgres_data:
+  course_postgres_data:
