@@ -1,0 +1,12 @@
+group = 'az.edu.ada.wm2'
+version = '0.0.1-SNAPSHOT'
+
+repositories {
+	mavenCentral()
+}
+
+subprojects {
+	repositories {
+		mavenCentral()
+	}
+}
