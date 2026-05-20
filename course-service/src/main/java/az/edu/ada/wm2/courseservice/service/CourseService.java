@@ -1,5 +1,5 @@
 package az.edu.ada.wm2.courseservice.service;
-
+import java.time.LocalDate;
 import az.edu.ada.wm2.courseservice.client.StudentFeignClient;
 import az.edu.ada.wm2.courseservice.exception.CourseNotFoundException;
 import az.edu.ada.wm2.courseservice.exception.EnrollmentAlreadyExistsException;
@@ -89,6 +89,7 @@ public class CourseService {
         Enrollment enrollment = Enrollment.builder()
                 .courseId(courseId)
                 .studentId(studentId)
+                .enrollmentDate(LocalDate.now())
                 .build();
         Enrollment savedEnrollment = enrollmentRepository.save(enrollment);
 
@@ -96,6 +97,7 @@ public class CourseService {
                 savedEnrollment.getId(),
                 savedEnrollment.getCourseId(),
                 savedEnrollment.getStudentId(),
+                savedEnrollment.getEnrollmentDate(),
                 "Student enrolled successfully."
         );
     }
