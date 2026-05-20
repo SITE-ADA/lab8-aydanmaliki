@@ -12,14 +12,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/courses")
@@ -52,7 +45,8 @@ public class CourseController {
     @Operation(summary = "Update course", description = "Updates a course by id.")
     public ResponseEntity<CourseResponseDto> updateCourse(
             @PathVariable Long id,
-            @Valid @RequestBody CourseRequestDto requestDto) {
+            @Valid @RequestBody CourseRequestDto requestDto
+    ) {
         return ResponseEntity.ok(courseService.updateCourse(id, requestDto));
     }
 
@@ -66,11 +60,12 @@ public class CourseController {
     @PostMapping("/{courseId}/students/{studentId}")
     @Operation(
             summary = "Enroll student",
-            description = "Enrolls a student into a course after validating the student via Feign client."
+            description = "Enrolls a student into a course after validating the student and prerequisites."
     )
     public ResponseEntity<EnrollmentResponseDto> enrollStudent(
             @PathVariable Long courseId,
-            @PathVariable Long studentId) {
+            @PathVariable Long studentId
+    ) {
         EnrollmentResponseDto responseDto = courseService.enrollStudent(courseId, studentId);
         return new ResponseEntity<>(responseDto, HttpStatus.CREATED);
     }
@@ -82,5 +77,14 @@ public class CourseController {
     )
     public ResponseEntity<CourseStudentsResponseDto> getCourseStudents(@PathVariable Long courseId) {
         return ResponseEntity.ok(courseService.getCourseStudents(courseId));
+    }
+
+    @GetMapping("/students/name/{studentName}")
+    @Operation(
+            summary = "Get courses by student name",
+            description = "Returns courses for a student by searching the student name."
+    )
+    public ResponseEntity<List<CourseResponseDto>> getCoursesByStudentName(@PathVariable String studentName) {
+        return ResponseEntity.ok(courseService.getCoursesByStudentName(studentName));
     }
 }

@@ -1,11 +1,7 @@
 package az.edu.ada.wm2.courseservice.service;
 
 import az.edu.ada.wm2.courseservice.client.StudentFeignClient;
-import az.edu.ada.wm2.courseservice.exception.CourseNotFoundException;
-import az.edu.ada.wm2.courseservice.exception.EnrollmentAlreadyExistsException;
-import az.edu.ada.wm2.courseservice.exception.PrerequisiteNotCompletedException;
-import az.edu.ada.wm2.courseservice.exception.RemoteStudentNotFoundException;
-import az.edu.ada.wm2.courseservice.exception.StudentServiceCommunicationException;
+import az.edu.ada.wm2.courseservice.exception.*;
 import az.edu.ada.wm2.courseservice.model.dto.*;
 import az.edu.ada.wm2.courseservice.model.entity.Course;
 import az.edu.ada.wm2.courseservice.model.entity.Enrollment;
@@ -18,9 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.*;
 
 @Service
 @RequiredArgsConstructor
@@ -43,42 +37,35 @@ public class CourseService {
                 .prerequisiteCourseId(requestDto.getPrerequisiteCourseId())
                 .build();
 
-        Course savedCourse = courseRepository.save(course);
-        return toCourseResponseDto(savedCourse);
+        return toCourseResponseDto(courseRepository.save(course));
     }
 
     public List<CourseResponseDto> getAllCourses() {
-        return courseRepository.findAll()
-                .stream()
+        return courseRepository.findAll().stream()
                 .map(this::toCourseResponseDto)
                 .toList();
     }
 
     public CourseResponseDto getCourseById(Long id) {
-        Course course = findCourseOrThrow(id);
-        return toCourseResponseDto(course);
+        return toCourseResponseDto(findCourseOrThrow(id));
     }
 
     public CourseResponseDto updateCourse(Long id, CourseRequestDto requestDto) {
-        Course existingCourse = findCourseOrThrow(id);
+        Course course = findCourseOrThrow(id);
 
-        existingCourse.setTitle(requestDto.getTitle());
-        existingCourse.setCode(requestDto.getCode());
-        existingCourse.setCredits(requestDto.getCredits());
-        existingCourse.setPrerequisiteCourseId(requestDto.getPrerequisiteCourseId());
+        course.setTitle(requestDto.getTitle());
+        course.setCode(requestDto.getCode());
+        course.setCredits(requestDto.getCredits());
+        course.setPrerequisiteCourseId(requestDto.getPrerequisiteCourseId());
 
-        Course updatedCourse = courseRepository.save(existingCourse);
-        return toCourseResponseDto(updatedCourse);
+        return toCourseResponseDto(courseRepository.save(course));
     }
 
     public void deleteCourse(Long id) {
-        Course course = findCourseOrThrow(id);
-        courseRepository.delete(course);
+        courseRepository.delete(findCourseOrThrow(id));
     }
 
     public EnrollmentResponseDto enrollStudent(Long courseId, Long studentId) {
-        log.debug("Enrolling student {} into course {}", studentId, courseId);
-
         Course course = findCourseOrThrow(courseId);
 
         if (enrollmentRepository.existsByCourseIdAndStudentId(courseId, studentId)) {
@@ -94,32 +81,46 @@ public class CourseService {
                 .enrollmentDate(LocalDate.now())
                 .build();
 
-        Enrollment savedEnrollment = enrollmentRepository.save(enrollment);
+        Enrollment saved = enrollmentRepository.save(enrollment);
 
         return new EnrollmentResponseDto(
-                savedEnrollment.getId(),
-                savedEnrollment.getCourseId(),
-                savedEnrollment.getStudentId(),
-                savedEnrollment.getEnrollmentDate(),
+                saved.getId(),
+                saved.getCourseId(),
+                saved.getStudentId(),
+                saved.getEnrollmentDate(),
                 "Student enrolled successfully."
         );
     }
 
     public CourseStudentsResponseDto getCourseStudents(Long courseId) {
-        log.debug("Fetching students for course {}", courseId);
-
         Course course = findCourseOrThrow(courseId);
 
-        List<Long> studentIds = enrollmentRepository.findByCourseId(courseId)
-                .stream()
+        List<StudentDto> students = enrollmentRepository.findByCourseId(courseId).stream()
                 .map(Enrollment::getStudentId)
-                .toList();
-
-        List<StudentDto> students = studentIds.stream()
                 .map(this::fetchStudentWithRestTemplate)
                 .toList();
 
         return new CourseStudentsResponseDto(course.getId(), course.getTitle(), students);
+    }
+
+    public List<CourseResponseDto> getCoursesByStudentName(String studentName) {
+        String search = studentName.trim().toLowerCase();
+
+        StudentDto matchedStudent = fetchAllStudentsWithRestTemplate().stream()
+                .filter(student -> {
+                    String fullName = (student.getFirstName() + " " + student.getLastName()).toLowerCase();
+                    return student.getFirstName().equalsIgnoreCase(search)
+                            || student.getLastName().equalsIgnoreCase(search)
+                            || fullName.equals(search);
+                })
+                .findFirst()
+                .orElseThrow(() -> new StudentServiceCommunicationException("Student not found with name: " + studentName));
+
+        return enrollmentRepository.findByStudentId(matchedStudent.getId()).stream()
+                .map(Enrollment::getCourseId)
+                .map(this::findCourseOrThrow)
+                .map(this::toCourseResponseDto)
+                .toList();
     }
 
     private void validatePrerequisite(Course course, Long studentId) {
@@ -131,17 +132,15 @@ public class CourseService {
 
         findCourseOrThrow(prerequisiteCourseId);
 
-        boolean completedPrerequisite =
-                enrollmentRepository.existsByCourseIdAndStudentId(prerequisiteCourseId, studentId);
+        boolean completed = enrollmentRepository.existsByCourseIdAndStudentId(prerequisiteCourseId, studentId);
 
-        if (!completedPrerequisite) {
+        if (!completed) {
             throw new PrerequisiteNotCompletedException(studentId, prerequisiteCourseId);
         }
     }
 
     private void validateStudentWithFeign(Long studentId) {
         try {
-            log.debug("Validating student {} via Feign", studentId);
             studentFeignClient.getStudentById(studentId);
         } catch (FeignException.NotFound ex) {
             throw new RemoteStudentNotFoundException(studentId);
@@ -154,7 +153,6 @@ public class CourseService {
         String url = studentServiceBaseUrl + "/api/v1/students/" + studentId;
 
         try {
-            log.debug("Fetching student {} via RestTemplate", studentId);
             return restTemplate.getForObject(url, StudentDto.class);
         } catch (HttpClientErrorException.NotFound ex) {
             throw new RemoteStudentNotFoundException(studentId);
@@ -163,8 +161,18 @@ public class CourseService {
         }
     }
 
+    private List<StudentDto> fetchAllStudentsWithRestTemplate() {
+        String url = studentServiceBaseUrl + "/api/v1/students";
+
+        try {
+            StudentDto[] students = restTemplate.getForObject(url, StudentDto[].class);
+            return students == null ? List.of() : List.of(students);
+        } catch (RestClientException ex) {
+            throw new StudentServiceCommunicationException("Could not fetch students from student-service.");
+        }
+    }
+
     private Course findCourseOrThrow(Long id) {
-        log.debug("Looking up course {}", id);
         return courseRepository.findById(id)
                 .orElseThrow(() -> new CourseNotFoundException(id));
     }
